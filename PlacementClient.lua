@@ -32,6 +32,8 @@ local selectedParts = {}
 local isDragging = false
 local startPos
 local selectionHighlights = {}
+local inventoryLabels = {}
+local previewGX, previewGZ
 
 local Items = {
 	{name="Block", image="rbxassetid://12345678", size=Vector3.new(8,2,8), count=10},
@@ -68,7 +70,8 @@ for _,itemData in ipairs(Items) do
 	countLabel.BackgroundTransparency = 0.5
 	countLabel.TextScaled = true
 	countLabel.TextColor3 = Color3.new(1,1,1)
-	countLabel.Text = inventory[itemData.name]
+	countLabel.Text = tostring(inventory[itemData.name])
+	inventoryLabels[itemData.name] = countLabel
 	btn.MouseButton1Click:Connect(function()
 		if inventory[itemData.name] <= 0 then return end
 		selectedItem = itemData
@@ -140,7 +143,7 @@ local function updateSelection()
 	local x1,y1 = framePos.X, framePos.Y
 	local x2,y2 = x1 + frameSize.X, y1 + frameSize.Y
 	for _,part in ipairs(baseData:GetChildren()) do
-		if part:IsA("BasePart") then
+		if part:IsA("BasePart") and typeof(part:GetAttribute("PartId")) == "string" then
 			local screenPos, visible = workspace.CurrentCamera:WorldToViewportPoint(part.Position)
 			if visible and screenPos.X >= x1 and screenPos.X <= x2 and screenPos.Y >= y1 and screenPos.Y <= y2 then
 				table.insert(selectedParts, part)
@@ -155,9 +158,11 @@ local function createMovePreview(parts)
 	for _,p in pairs(movingPartsPreview) do if p then p:Destroy() end end
 	movingPartsPreview = {}
 	moveOffsets = {}
-	local baseGX, baseGZ = grid:WorldToGrid(parts[1].Position)
+	local baseGX = parts[1]:GetAttribute("GridX") or select(1, grid:WorldToGrid(parts[1].Position))
+	local baseGZ = parts[1]:GetAttribute("GridZ") or select(2, grid:WorldToGrid(parts[1].Position))
 	for _,part in ipairs(parts) do
-		local pgx, pgz = grid:WorldToGrid(part.Position)
+		local pgx = part:GetAttribute("GridX") or select(1, grid:WorldToGrid(part.Position))
+		local pgz = part:GetAttribute("GridZ") or select(2, grid:WorldToGrid(part.Position))
 		moveOffsets[part] = {x=pgx-baseGX, z=pgz-baseGZ}
 		local preview = Instance.new("Part")
 		preview.Size = part.Size
@@ -210,13 +215,13 @@ end)
 
 removeBtn.MouseButton1Click:Connect(function()
 	if #selectedParts == 0 then return end
-	local names = {}
-	for _,part in ipairs(selectedParts) do
-		if part and part.Name then
-			table.insert(names, part.Name)
-		end
+	local ids = {}
+	for _, part in ipairs(selectedParts) do
+		local partId = part:GetAttribute("PartId")
+		if typeof(partId) == "string" then ids[#ids + 1] = partId end
 	end
-	PlacementEvent:Fire("Remove",{names=names})
+	if #ids == 0 then return end
+	PlacementEvent:Fire("Remove", {ids = ids})
 	selectedParts = {}
 	selectionCountLabel.Text = "Selected: 0"
 	clearHighlights()
@@ -227,8 +232,8 @@ moveBtn.MouseButton1Click:Connect(function()
 	createMovePreview(selectedParts)
 end)
 mouse.Button1Down:Connect(function()
-	if selectedItem and previewPart then
-		local gx,gz = grid:WorldToGrid(previewPart.Position)
+	if selectedItem and previewPart and previewGX ~= nil and previewGZ ~= nil then
+		local gx, gz = previewGX, previewGZ
 		local sx,sz = math.ceil(selectedItem.size.X/CellSize), math.ceil(selectedItem.size.Z/CellSize)
 		PlacementEvent:Fire("Place",{
 			x=gx,z=gz,sx=sx,sz=sz,sy=selectedItem.size.Y,
@@ -266,6 +271,11 @@ PlacementEvent:Connect(function(action,data)
 	if action=="Place" and data.part and data.partId then
 		data.part:SetAttribute("PartId",data.partId)
 		table.insert(placedParts,data.part)
+		local name = data.itemName
+		if inventory[name] then
+			inventory[name] = math.max(0, inventory[name] - 1)
+			if inventoryLabels[name] then inventoryLabels[name].Text = tostring(inventory[name]) end
+		end
 	elseif action=="Move" then
 		for _,m in ipairs(data.parts) do
 			for _,part in ipairs(placedParts) do
@@ -277,10 +287,19 @@ PlacementEvent:Connect(function(action,data)
 			end
 		end
 	elseif action=="Remove" then
-		for _,part in ipairs(data.parts) do
-			if part then
-				part:Destroy()
-				table.remove(placedParts, table.find(placedParts, part))
+		for _, partId in ipairs(data.ids or {}) do
+			for index = #placedParts, 1, -1 do
+				local part = placedParts[index]
+				if part:GetAttribute("PartId") == partId then
+					table.remove(placedParts, index)
+					break
+				end
+			end
+		end
+		for _, name in ipairs(data.names or {}) do
+			if inventory[name] then
+				inventory[name] += 1
+				if inventoryLabels[name] then inventoryLabels[name].Text = tostring(inventory[name]) end
 			end
 		end
 	end
@@ -297,18 +316,23 @@ RunService.RenderStepped:Connect(function()
 			previewPart.Parent = workspace
 		end
 		local gx,gz = grid:WorldToGrid(mousePos)
-		local sx,sz = math.ceil(selectedItem.size.X/CellSize), math.ceil(selectedItem.size.Z/CellSize)
-		previewPart.Size = Vector3.new(sx*CellSize, selectedItem.size.Y, sz*CellSize)
-		local baseY = basePlate.Position.Y + basePlate.Size.Y/2
-		previewPart.Position = grid:GridToWorld(gx,gz) + Vector3.new(0, selectedItem.size.Y/2 + (baseY - basePlate.Position.Y), 0)
-		previewPart.Color = grid:CanPlace(gx,gz,sx,sz) and PreviewColor or BlockedColor
+		local sx, sz = math.ceil(selectedItem.size.X / CellSize), math.ceil(selectedItem.size.Z / CellSize)
+		local width = if currentRotation % 180 == 0 then sx else sz
+		local height = if currentRotation % 180 == 0 then sz else sx
+		previewGX, previewGZ = gx, gz
+		previewPart.Size = Vector3.new(sx * CellSize, selectedItem.size.Y, sz * CellSize)
+		previewPart.Orientation = Vector3.new(0, currentRotation, 0)
+		previewPart.Position = grid:GridToWorld(gx, gz) + Vector3.new((width - 1) * CellSize / 2, selectedItem.size.Y / 2, (height - 1) * CellSize / 2)
+		previewPart.Color = grid:CanPlace(gx, gz, width, height) and PreviewColor or BlockedColor
 	end
 	if next(movingPartsPreview) then
 		local gx,gz = grid:WorldToGrid(mousePos)
 		moveTargetGrid = {gx=gx, gz=gz}
 		for part, preview in pairs(movingPartsPreview) do
 			local off = moveOffsets[part]
-			preview.Position = grid:GridToWorld(gx+off.x, gz+off.z) + Vector3.new(0, preview.Size.Y/2, 0)
+			local width = part:GetAttribute("GridWidth") or 1
+			local height = part:GetAttribute("GridHeight") or 1
+			preview.Position = grid:GridToWorld(gx + off.x, gz + off.z) + Vector3.new((width - 1) * CellSize / 2, preview.Size.Y / 2, (height - 1) * CellSize / 2)
 		end
 	end
 end)
