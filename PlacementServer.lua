@@ -29,7 +29,7 @@ local function validInteger(value: any): boolean
 end
 
 local function validRotation(rot: any): boolean
-    return validInteger(rot) and rot >= 0 and rot < 360 and rot % 90 == 0
+    return validInteger(rot) and math.abs(rot) <= 360 and rot % 90 == 0
 end
 
 local function withinBatch(value: any): boolean
@@ -115,6 +115,7 @@ PlacementEvent:Connect(function(player, action, data)
             if not part or not part.Parent then continue end
             local newX, newZ, newRot = move.newGX, move.newGZ, move.rot
             if not validGrid(newX, newZ) or not validRotation(newRot) then continue end
+            newRot = newRot % 360
             local oldX = part:GetAttribute("GridX")
             local oldZ = part:GetAttribute("GridZ")
             local oldW = part:GetAttribute("GridWidth")
@@ -147,6 +148,7 @@ PlacementEvent:Connect(function(player, action, data)
         local selected = if withinBatch(ids) then ids else names
         local byName = not withinBatch(ids)
         local removedIds = {}
+        local removedNames = {}
         for _, value in ipairs(selected) do
             if typeof(value) ~= "string" then continue end
             local part = byName and nil or byId[value]
@@ -166,6 +168,7 @@ PlacementEvent:Connect(function(player, action, data)
                 if typeof(partId) == "string" then
                     byId[partId] = nil
                     removedIds[#removedIds + 1] = partId
+                    removedNames[#removedNames + 1] = part.Name
                 end
                 local name = part.Name
                 counts[name] = math.max(0, (counts[name] or 1) - 1)
@@ -174,6 +177,6 @@ PlacementEvent:Connect(function(player, action, data)
                 part:Destroy()
             end
         end
-        if #removedIds > 0 then PlacementEvent:Fire(player, "Remove", {ids = removedIds}) end
+        if #removedIds > 0 then PlacementEvent:Fire(player, "Remove", {ids = removedIds, names = removedNames}) end
     end
 end)
