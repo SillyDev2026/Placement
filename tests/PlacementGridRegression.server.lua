@@ -1,0 +1,25 @@
+--!strict
+-- Run this server Script beside a ModuleScript named PlacementModule.
+local Placement = require(script.Parent:WaitForChild("PlacementModule"))
+local base = Instance.new("Part")
+base.Anchored = true
+base.Size = Vector3.new(800, 1, 800)
+local grid = Placement.new(base)
+
+assert(grid:CanPlace(0, 0, 2, 2), "New grid should start empty")
+assert(not grid:CanPlace(-1, 0, 2, 2), "Negative index was accepted")
+assert(not grid:CanPlace(99, 99, 2, 2), "Out-of-bounds region was accepted")
+assert(not grid:CanPlace(0, 0, 0, 1), "Zero-size region was accepted")
+assert(not grid:CanPlace(0.5, 0, 1, 1), "Fractional cell index was accepted")
+assert(not grid:CanPlace(0, 0, math.huge, 1), "Infinite cell width was accepted")
+assert(not grid:SetCell(100, 0, 1), "Out-of-bounds write succeeded")
+assert(grid:Occupy(0, 0, 2, 2), "Occupy failed")
+assert(not grid:CanPlace(0, 0, 1, 1), "Occupied cell was not detected")
+assert(grid:Free(0, 0, 2, 2), "Free failed")
+assert(grid:CanPlace(0, 0, 2, 2), "Freed cells remain occupied")
+assert(grid:Occupy(0, 0, 1, 1), "Second occupancy failed")
+grid:Clear()
+assert(grid:CanPlace(0, 0, 1, 1), "Clear failed")
+assert(grid:CanPlace(99, 99, 1, 1), "Final cell not addressable")
+base:Destroy()
+print("PlacementModule grid regression PASS: 13 cases")
