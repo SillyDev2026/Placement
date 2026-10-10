@@ -176,6 +176,7 @@ PlacementEvent:Connect(function(player, action, data)
         local targets = if type(ids) == "table" then ids else names
         if #targets > MAX_BATCH then return end
         local removedParts = {}
+        local removedIds = {}
         local seen = {}
         for _, candidate in ipairs(targets) do
             if type(candidate) ~= "string" or seen[candidate] then continue end
@@ -201,9 +202,10 @@ PlacementEvent:Connect(function(player, action, data)
             parts[id] = nil
             used[part.Name] = math.max(0, (used[part.Name] or 1) - 1)
             table.insert(removedParts, part)
+            table.insert(removedIds, id)
         end
         if #removedParts > 0 then
-            PlacementEvent:Fire(player, "Remove", {parts = removedParts})
+            PlacementEvent:Fire(player, "Remove", {parts = removedParts, partIds = removedIds})
             for _, part in ipairs(removedParts) do part:Destroy() end
         end
     end
