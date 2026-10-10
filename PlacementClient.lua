@@ -210,13 +210,14 @@ end)
 
 removeBtn.MouseButton1Click:Connect(function()
 	if #selectedParts == 0 then return end
-	local names = {}
-	for _,part in ipairs(selectedParts) do
-		if part and part.Name then
-			table.insert(names, part.Name)
-		end
-	end
-	PlacementEvent:Fire("Remove",{names=names})
+    local partIds = {}
+    for _, part in ipairs(selectedParts) do
+        if part then
+            local id = part:GetAttribute("PartId")
+            if type(id) == "string" then table.insert(partIds, id) end
+        end
+    end
+    if #partIds > 0 then PlacementEvent:Fire("Remove", {partIds = partIds}) end
 	selectedParts = {}
 	selectionCountLabel.Text = "Selected: 0"
 	clearHighlights()
@@ -276,14 +277,17 @@ PlacementEvent:Connect(function(action,data)
 				end
 			end
 		end
-	elseif action=="Remove" then
-		for _,part in ipairs(data.parts) do
-			if part then
-				part:Destroy()
-				table.remove(placedParts, table.find(placedParts, part))
-			end
-		end
-	end
+    elseif action == "Remove" then
+        local removedIds = {}
+        for _, id in ipairs(data.partIds or {}) do removedIds[id] = true end
+        for index = #placedParts, 1, -1 do
+            local part = placedParts[index]
+            local id = if part then part:GetAttribute("PartId") else nil
+            if id and removedIds[id] then table.remove(placedParts, index) end
+        end
+        -- The server owns Instances and destroys them; clients only update
+        -- their local selection/preview lists.
+    end
 end)
 
 RunService.RenderStepped:Connect(function()
